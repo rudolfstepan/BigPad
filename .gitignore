@@ -1,0 +1,15 @@
+/build/
+/out/
+/.vs/
+/.vscode/
+/cmake-build-*/
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+*.obj
+*.exe
+*.pdb
+*.ilk
+*.bigpad.tmp
+
