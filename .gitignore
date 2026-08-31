@@ -12,4 +12,4 @@
 *.pdb
 *.ilk
 *.bigpad.tmp
-
+/MEMORY.md
