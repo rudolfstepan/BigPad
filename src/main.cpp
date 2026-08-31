@@ -29,6 +29,10 @@ constexpr UINT_PTR kSyntaxAuto = 500, kSyntaxNone = 501, kSyntaxCpp = 502, kSynt
                    kSyntaxCSharp = 507, kSyntaxAsm = 508;
 constexpr UINT_PTR kTextMode = 600, kHexMode = 601;
 constexpr UINT_PTR kSaveSettings = 700, kAutoSaveSettings = 701, kResetSettings = 702;
+constexpr UINT_PTR kEncodingUtf8 = 800, kEncodingAnsi = 801, kWriteBom = 802;
+constexpr UINT_PTR kLanguageGerman = 820, kLanguageEnglish = 821;
+
+enum class TextEncoding { Utf8, Ansi };
 
 enum class Syntax { None, Cpp, Json, Python, Xml, Log, CSharp, Asm };
 
@@ -54,6 +58,7 @@ public:
 
     bool open(const std::wstring& path, std::wstring& error) {
         close();
+        encoding_ = TextEncoding::Utf8; writeBom_ = false;
         HANDLE h = CreateFileW(path.c_str(), GENERIC_READ,
                                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_RANDOM_ACCESS, nullptr);
@@ -61,7 +66,13 @@ public:
         LARGE_INTEGER n{};
         if (!GetFileSizeEx(h, &n)) { error = winError(); CloseHandle(h); return false; }
         file_ = h; open_ = true; path_ = path; originalSize_ = static_cast<uint64_t>(n.QuadPart);
-        if (originalSize_) pieces_.push_back({Source::Original, 0, originalSize_});
+        uint64_t contentOffset = 0;
+        if (originalSize_ >= 3) {
+            unsigned char signature[3]{}; DWORD got = 0;
+            SetFilePointer(file_, 0, nullptr, FILE_BEGIN); ReadFile(file_, signature, 3, &got, nullptr);
+            if (got == 3 && signature[0] == 0xEF && signature[1] == 0xBB && signature[2] == 0xBF) { encoding_ = TextEncoding::Utf8; writeBom_ = true; contentOffset = 3; }
+        }
+        if (originalSize_ > contentOffset) pieces_.push_back({Source::Original, contentOffset, originalSize_ - contentOffset});
         dirty_ = false;
         invalidateCache();
         return true;
@@ -76,10 +87,14 @@ public:
     uint64_t size() const {
         uint64_t n = 0; for (const auto& p : pieces_) n += p.length; return n;
     }
-    void createNew() { close(); open_ = true; }
+    void createNew() { close(); open_ = true; encoding_ = TextEncoding::Utf8; writeBom_ = false; }
     bool isOpen() const { return open_; }
     bool dirty() const { return dirty_; }
     const std::wstring& path() const { return path_; }
+    TextEncoding encoding() const { return encoding_; }
+    bool writeBom() const { return writeBom_; }
+    void setEncoding(TextEncoding value) { encoding_ = value; if (value == TextEncoding::Ansi) writeBom_ = false; }
+    void setWriteBom(bool value) { writeBom_ = value && encoding_ == TextEncoding::Utf8; dirty_ = true; }
 
     size_t read(uint64_t pos, char* out, size_t count) const {
         if (pos >= size() || count == 0) return 0;
@@ -130,6 +145,10 @@ public:
         HANDLE out = CreateFileW(temp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
                                  FILE_ATTRIBUTE_NORMAL, nullptr);
         if (out == INVALID_HANDLE_VALUE) { error = winError(); return false; }
+        if (writeBom_ && encoding_ == TextEncoding::Utf8) {
+            const unsigned char bom[] = {0xEF, 0xBB, 0xBF}; DWORD written = 0;
+            if (!WriteFile(out, bom, sizeof(bom), &written, nullptr) || written != sizeof(bom)) { error = winError(); CloseHandle(out); DeleteFileW(temp.c_str()); return false; }
+        }
         std::array<char, 1024 * 1024> buffer{};
         bool ok = true;
         for (const auto& p : pieces_) {
@@ -215,9 +234,13 @@ private:
     std::vector<Piece> pieces_;
     std::vector<char> added_;
     bool dirty_ = false;
+    TextEncoding encoding_ = TextEncoding::Utf8;
+    bool writeBom_ = false;
     mutable uint64_t cacheStart_ = UINT64_MAX;
     mutable std::vector<char> cache_;
 };
+
+HMENU makeMenu(bool german);
 
 struct Line {
     uint64_t start{}, contentEnd{}, next{}, number{};
@@ -233,6 +256,7 @@ public:
         status_ = CreateWindowExW(0, STATUSCLASSNAMEW, nullptr, WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP,
                                   0, 0, 0, 0, hwnd_, nullptr, GetModuleHandleW(nullptr), nullptr);
         loadSettings();
+        HMENU oldMenu = GetMenu(hwnd_); SetMenu(hwnd_, makeMenu(german_)); if (oldMenu) DestroyMenu(oldMenu);
     }
     ~Editor() { DeleteObject(font_); }
 
@@ -281,7 +305,7 @@ public:
         if (!confirmDiscard()) return false;
         wchar_t path[32768]{};
         OPENFILENAMEW ofn{sizeof(ofn)}; ofn.hwndOwner = hwnd_; ofn.lpstrFile = path;
-        ofn.nMaxFile = ARRAYSIZE(path); ofn.lpstrFilter = L"Textdateien\0*.txt;*.log;*.csv;*.json;*.xml;*.md\0Alle Dateien\0*.*\0";
+        ofn.nMaxFile = ARRAYSIZE(path); ofn.lpstrFilter = german_ ? L"Textdateien\0*.txt;*.log;*.csv;*.json;*.xml;*.md\0Alle Dateien\0*.*\0" : L"Text files\0*.txt;*.log;*.csv;*.json;*.xml;*.md\0All files\0*.*\0";
         ofn.Flags = OFN_FILEMUSTEXIST | OFN_EXPLORER;
         if (!GetOpenFileNameW(&ofn)) return false;
         return openPath(path, false);
@@ -318,7 +342,7 @@ public:
         if (choosePath || path.empty()) {
             std::vector<wchar_t> buf(32768); wcsncpy_s(buf.data(), buf.size(), path.c_str(), _TRUNCATE);
             OPENFILENAMEW ofn{sizeof(ofn)}; ofn.hwndOwner = hwnd_; ofn.lpstrFile = buf.data();
-            ofn.nMaxFile = static_cast<DWORD>(buf.size()); ofn.lpstrFilter = L"Textdateien\0*.txt\0Alle Dateien\0*.*\0";
+            ofn.nMaxFile = static_cast<DWORD>(buf.size()); ofn.lpstrFilter = german_ ? L"Textdateien\0*.txt\0Alle Dateien\0*.*\0" : L"Text files\0*.txt\0All files\0*.*\0";
             ofn.Flags = OFN_OVERWRITEPROMPT | OFN_EXPLORER;
             if (!GetSaveFileNameW(&ofn)) return false; path = buf.data();
         }
@@ -329,7 +353,7 @@ public:
 
     bool confirmDiscard() {
         if (!doc_.dirty()) return true;
-        int r = MessageBoxW(hwnd_, L"Aenderungen speichern?", L"BigPad", MB_YESNOCANCEL | MB_ICONQUESTION);
+        int r = MessageBoxW(hwnd_, tr(L"Aenderungen speichern?", L"Save changes?"), L"BigPad", MB_YESNOCANCEL | MB_ICONQUESTION);
         if (r == IDCANCEL) return false; if (r == IDYES) return save(false); return true;
     }
 
@@ -366,11 +390,10 @@ public:
         sizeCommand_ = command; recreateFont(); settingChanged(); refreshMenu(); refresh();
     }
     void showAbout() {
-        MessageBoxW(hwnd_,
-            L"BigPad\n\nEin nativer Windows-Texteditor fuer sehr grosse Dateien.\n"
-            L"Dateiinhalte werden fensterweise gelesen und Aenderungen in einer Piece-Table verwaltet.\n\n"
-            L"Version 1.0",
-            L"Ueber BigPad", MB_OK | MB_ICONINFORMATION);
+        MessageBoxW(hwnd_, german_ ?
+            L"BigPad\n\nEin nativer Windows-Text- und Hex-Editor fuer sehr grosse Dateien.\nDateiinhalte werden fensterweise gelesen.\n\nVersion 1.1" :
+            L"BigPad\n\nA native Windows text and hex editor for very large files.\nFile content is read in windows.\n\nVersion 1.1",
+            tr(L"Ueber BigPad", L"About BigPad"), MB_OK | MB_ICONINFORMATION);
     }
     void selectSyntax(UINT_PTR command) {
         syntaxAuto_ = command == kSyntaxAuto;
@@ -384,6 +407,9 @@ public:
         }
         syntaxCommand_ = command; settingChanged(); refreshMenu(); refresh();
     }
+    void setEncoding(TextEncoding encoding) { doc_.setEncoding(encoding); refreshMenu(); refresh(); }
+    void toggleBom() { doc_.setWriteBom(!doc_.writeBom()); refreshMenu(); refresh(); }
+    void setLanguage(bool german) { german_ = german; HMENU old = GetMenu(hwnd_); SetMenu(hwnd_, makeMenu(german_)); if(old) DestroyMenu(old); settingChanged(); refreshMenu(); DrawMenuBar(hwnd_); refresh(); }
     void setHexMode(bool enabled) {
         hexMode_ = enabled; highNibble_ = true;
         top_ = enabled ? (cursor_ / 16) * 16 : lineStart(cursor_);
@@ -393,17 +419,17 @@ public:
     void saveSettings(bool notify = true) {
         HKEY key{};
         if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\BigPad", 0, nullptr, 0, KEY_WRITE, nullptr, &key, nullptr) != ERROR_SUCCESS) {
-            if (notify) MessageBoxW(hwnd_, L"Die Einstellungen konnten nicht gespeichert werden.", L"BigPad", MB_OK | MB_ICONERROR);
+            if (notify) MessageBoxW(hwnd_, tr(L"Die Einstellungen konnten nicht gespeichert werden.", L"Settings could not be saved."), L"BigPad", MB_OK | MB_ICONERROR);
             return;
         }
         auto write = [key](const wchar_t* name, DWORD value) { RegSetValueExW(key, name, 0, REG_DWORD, reinterpret_cast<const BYTE*>(&value), sizeof(value)); };
         write(L"DarkMode", darkMode_); write(L"LineNumbers", showLineNumbers_); write(L"WordWrap", wordWrap_);
         write(L"FontPoints", fontPoints_); write(L"FontCommand", static_cast<DWORD>(fontCommand_));
         write(L"SyntaxCommand", static_cast<DWORD>(syntaxCommand_)); write(L"HexMode", hexMode_);
-        write(L"AutoSaveSettings", autoSaveSettings_);
+        write(L"AutoSaveSettings", autoSaveSettings_); write(L"German", german_);
         RegSetValueExW(key, L"FontName", 0, REG_SZ, reinterpret_cast<const BYTE*>(fontName_.c_str()), static_cast<DWORD>((fontName_.size()+1)*sizeof(wchar_t)));
         RegCloseKey(key);
-        if (notify) MessageBoxW(hwnd_, L"Einstellungen wurden gespeichert.", L"BigPad", MB_OK | MB_ICONINFORMATION);
+        if (notify) MessageBoxW(hwnd_, tr(L"Einstellungen wurden gespeichert.", L"Settings were saved."), L"BigPad", MB_OK | MB_ICONINFORMATION);
     }
     void resetSettings() {
         darkMode_=false; showLineNumbers_=true; wordWrap_=false; fontName_=L"Consolas"; fontPoints_=14;
@@ -459,8 +485,8 @@ public:
         if (hexMode_) { characterHex(ch); return; }
         if (!doc_.isOpen() || ch < 32 && ch != L'\r' && ch != L'\t') return;
         std::wstring w(1, ch); if (ch == L'\r') w = L"\r\n";
-        int n = WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), nullptr, 0, nullptr, nullptr);
-        std::string bytes(n, '\0'); WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), bytes.data(), n, nullptr, nullptr);
+        int n = WideCharToMultiByte(codePage(), 0, w.data(), static_cast<int>(w.size()), nullptr, 0, nullptr, nullptr);
+        std::string bytes(n, '\0'); WideCharToMultiByte(codePage(), 0, w.data(), static_cast<int>(w.size()), bytes.data(), n, nullptr, nullptr);
         doc_.insert(cursor_, bytes); cursor_ += bytes.size(); preferredCol_ = columnAt(cursor_);
         ensureCursorVisible(); refresh();
     }
@@ -478,7 +504,7 @@ public:
     }
 
     void updateTitle() {
-        std::wstring name = doc_.path().empty() ? L"Ohne Titel" : doc_.path();
+        std::wstring name = doc_.path().empty() ? tr(L"Ohne Titel", L"Untitled") : doc_.path();
         std::wstring title = (doc_.dirty() ? L"* " : L"") + name + L" - BigPad";
         SetWindowTextW(hwnd_, title.c_str());
     }
@@ -506,6 +532,10 @@ private:
         CheckMenuRadioItem(menu, kSize10, kSize28, sizeCommand_, MF_BYCOMMAND);
         CheckMenuRadioItem(menu, kSyntaxAuto, kSyntaxAsm, syntaxCommand_, MF_BYCOMMAND);
         CheckMenuRadioItem(menu, kTextMode, kHexMode, hexMode_ ? kHexMode : kTextMode, MF_BYCOMMAND);
+        CheckMenuRadioItem(menu, kEncodingUtf8, kEncodingAnsi, doc_.encoding()==TextEncoding::Utf8?kEncodingUtf8:kEncodingAnsi, MF_BYCOMMAND);
+        CheckMenuItem(menu, kWriteBom, MF_BYCOMMAND | (doc_.writeBom()?MF_CHECKED:MF_UNCHECKED));
+        EnableMenuItem(menu, kWriteBom, MF_BYCOMMAND | (doc_.encoding()==TextEncoding::Utf8?MF_ENABLED:MF_GRAYED));
+        CheckMenuRadioItem(menu, kLanguageGerman, kLanguageEnglish, german_?kLanguageGerman:kLanguageEnglish, MF_BYCOMMAND);
         CheckMenuItem(menu, kAutoSaveSettings, MF_BYCOMMAND | (autoSaveSettings_ ? MF_CHECKED : MF_UNCHECKED));
     }
     void settingChanged() { if (settingsLoaded_ && autoSaveSettings_) saveSettings(false); }
@@ -514,7 +544,7 @@ private:
         auto read = [key](const wchar_t* name, DWORD fallback) { DWORD value=fallback,size=sizeof(value),type=0; return RegQueryValueExW(key,name,nullptr,&type,reinterpret_cast<BYTE*>(&value),&size)==ERROR_SUCCESS&&type==REG_DWORD?value:fallback; };
         darkMode_=read(L"DarkMode",0)!=0; showLineNumbers_=read(L"LineNumbers",1)!=0; wordWrap_=read(L"WordWrap",0)!=0;
         fontPoints_=static_cast<int>(std::clamp<DWORD>(read(L"FontPoints",14),8,72)); fontCommand_=read(L"FontCommand",kFontConsolas);
-        syntaxCommand_=read(L"SyntaxCommand",kSyntaxAuto); hexMode_=read(L"HexMode",0)!=0; autoSaveSettings_=read(L"AutoSaveSettings",1)!=0;
+        syntaxCommand_=read(L"SyntaxCommand",kSyntaxAuto); hexMode_=read(L"HexMode",0)!=0; autoSaveSettings_=read(L"AutoSaveSettings",1)!=0; german_=read(L"German",1)!=0;
         wchar_t name[LF_FACESIZE]{}; DWORD bytes=sizeof(name),type=0; if(RegQueryValueExW(key,L"FontName",nullptr,&type,reinterpret_cast<BYTE*>(name),&bytes)==ERROR_SUCCESS&&type==REG_SZ) fontName_=name;
         RegCloseKey(key); syntaxAuto_=syntaxCommand_==kSyntaxAuto;
         selectSyntax(syntaxCommand_); recreateFont(); BOOL dark=darkMode_; DwmSetWindowAttribute(hwnd_,20,&dark,sizeof(dark)); SetWindowTheme(hwnd_,darkMode_?L"DarkMode_Explorer":L"Explorer",nullptr);
@@ -585,16 +615,16 @@ private:
         }
         std::wstring pos;
         if (hexMode_) { wchar_t value[32]{}; swprintf(value, ARRAYSIZE(value), L"Offset 0x%llX", static_cast<unsigned long long>(cursor_)); pos=value; }
-        else pos = L"Zeile " + std::to_wstring(currentLine) + L", Spalte " + std::to_wstring(columnAt(cursor_) + 1);
+        else pos = std::wstring(tr(L"Zeile ",L"Line ")) + std::to_wstring(currentLine) + tr(L", Spalte ",L", column ") + std::to_wstring(columnAt(cursor_) + 1);
         std::wstring bytes = L"Byte " + std::to_wstring(cursor_) + L" / " + std::to_wstring(doc_.size());
         std::wstring language = syntaxAuto_ ? std::wstring(L"Auto: ") + syntaxName() : syntaxName();
         int parts[] = {210, 475, 565, 710, -1};
         SendMessageW(status_, SB_SETPARTS, ARRAYSIZE(parts), reinterpret_cast<LPARAM>(parts));
         SendMessageW(status_, SB_SETTEXTW, 0, reinterpret_cast<LPARAM>(pos.c_str()));
         SendMessageW(status_, SB_SETTEXTW, 1, reinterpret_cast<LPARAM>(bytes.c_str()));
-        SendMessageW(status_, SB_SETTEXTW, 2, reinterpret_cast<LPARAM>(hexMode_ ? L"HEX" : L"UTF-8"));
+        SendMessageW(status_, SB_SETTEXTW, 2, reinterpret_cast<LPARAM>(hexMode_ ? L"HEX" : (doc_.encoding()==TextEncoding::Utf8 ? (doc_.writeBom()?L"UTF-8 BOM":L"UTF-8") : L"Windows ANSI")));
         SendMessageW(status_, SB_SETTEXTW, 3, reinterpret_cast<LPARAM>(language.c_str()));
-        SendMessageW(status_, SB_SETTEXTW, 4, reinterpret_cast<LPARAM>(doc_.dirty() ? L"Geaendert" : L"Gespeichert"));
+        SendMessageW(status_, SB_SETTEXTW, 4, reinterpret_cast<LPARAM>(doc_.dirty() ? tr(L"Geaendert",L"Modified") : tr(L"Gespeichert",L"Saved")));
     }
     int visibleRows() const {
         return std::max(1, textBottom() / std::max(1, lineHeight_));
@@ -619,6 +649,8 @@ private:
             DestroyCaret(); CreateCaret(hwnd_, nullptr, 2, lineHeight_); ShowCaret(hwnd_);
         }
     }
+    UINT codePage() const { return doc_.encoding()==TextEncoding::Utf8 ? CP_UTF8 : CP_ACP; }
+    const wchar_t* tr(const wchar_t* de, const wchar_t* en) const { return german_ ? de : en; }
     COLORREF textColor() const { return darkMode_ ? RGB(225, 225, 225) : RGB(25, 25, 25); }
     COLORREF syntaxColor(int kind) const {
         if (darkMode_) {
@@ -714,16 +746,16 @@ private:
                 if (nl != std::string::npos) { if (!raw.empty() && raw.back() == '\r') raw.pop_back(); ++pos; break; }
             }
             const uint64_t contentEnd = physicalStart + raw.size();
-            int n = MultiByteToWideChar(CP_UTF8, 0, raw.data(), static_cast<int>(raw.size()), nullptr, 0);
+            int n = MultiByteToWideChar(codePage(), 0, raw.data(), static_cast<int>(raw.size()), nullptr, 0);
             std::wstring wide;
-            if (n > 0) { wide.resize(n); MultiByteToWideChar(CP_UTF8, 0, raw.data(), static_cast<int>(raw.size()), wide.data(), n); }
+            if (n > 0) { wide.resize(n); MultiByteToWideChar(codePage(), 0, raw.data(), static_cast<int>(raw.size()), wide.data(), n); }
             for (auto& c : wide) if (c == L'\t') c = L' ';
             const size_t columns = wordWrap_ ? static_cast<size_t>(wrapColumns()) : std::max<size_t>(1, wide.size());
             size_t wcharOffset = 0; uint64_t byteOffset = 0; bool first = true;
             do {
                 size_t take = std::min(columns, wide.size() - wcharOffset);
                 std::wstring_view part(wide.data() + wcharOffset, take);
-                int bytes = WideCharToMultiByte(CP_UTF8, 0, part.data(), static_cast<int>(part.size()), nullptr, 0, nullptr, nullptr);
+                int bytes = WideCharToMultiByte(codePage(), 0, part.data(), static_cast<int>(part.size()), nullptr, 0, nullptr, nullptr);
                 Line line{}; line.start = physicalStart + byteOffset;
                 line.contentEnd = line.start + static_cast<uint64_t>(std::max(0, bytes));
                 line.next = line.contentEnd; line.number = lineNumber; line.continuation = !first;
@@ -769,18 +801,18 @@ private:
     uint64_t nextLine(uint64_t pos) const { uint64_t e = lineEnd(pos); char c{}; while (e < doc_.size() && doc_.read(e, &c, 1) && (c == '\r' || c == '\n')) { ++e; if (c == '\n') break; } return e; }
     uint64_t previousLine(uint64_t pos) const { uint64_t here = lineStart(pos); return here ? lineStart(here - 1) : 0; }
     uint64_t previousCodepoint(uint64_t pos) const {
-        if (!pos) return 0; --pos; char c{};
+        if (!pos) return 0; if(doc_.encoding()==TextEncoding::Ansi) return pos-1; --pos; char c{};
         while (pos && doc_.read(pos, &c, 1) && (static_cast<unsigned char>(c) & 0xC0) == 0x80) --pos;
         return pos;
     }
     uint64_t nextCodepoint(uint64_t pos) const {
-        if (pos >= doc_.size()) return doc_.size(); char c{}; doc_.read(pos++, &c, 1);
+        if (pos >= doc_.size()) return doc_.size(); if(doc_.encoding()==TextEncoding::Ansi) return pos+1; char c{}; doc_.read(pos++, &c, 1);
         while (pos < doc_.size() && doc_.read(pos, &c, 1) && (static_cast<unsigned char>(c) & 0xC0) == 0x80) ++pos;
         return pos;
     }
     int columnAt(uint64_t pos) const {
         uint64_t s = lineStart(pos); std::string bytes = doc_.read(s, static_cast<size_t>(pos - s));
-        return MultiByteToWideChar(CP_UTF8, 0, bytes.data(), static_cast<int>(bytes.size()), nullptr, 0);
+        return MultiByteToWideChar(codePage(), 0, bytes.data(), static_cast<int>(bytes.size()), nullptr, 0);
     }
     uint64_t byteAtColumn(const Line& l, int col) const {
         uint64_t p = l.start; for (int i = 0; i < col && p < l.contentEnd; ++i) p = nextCodepoint(p); return p;
@@ -812,7 +844,7 @@ private:
     void refresh() {
         updateTitle(); InvalidateRect(hwnd_, nullptr, FALSE);
     }
-    void showError(const std::wstring& e) { MessageBoxW(hwnd_, e.c_str(), L"BigPad - Fehler", MB_OK | MB_ICONERROR); }
+    void showError(const std::wstring& e) { MessageBoxW(hwnd_, e.c_str(), tr(L"BigPad - Fehler", L"BigPad - Error"), MB_OK | MB_ICONERROR); }
 
     HWND hwnd_; HWND status_{}; Document doc_; HFONT font_{}; int lineHeight_ = 20, charWidth_ = 10;
     uint64_t top_ = 0, cursor_ = 0; int preferredCol_ = 0; std::vector<Line> lines_;
@@ -820,6 +852,7 @@ private:
     bool darkMode_ = false;
     bool hexMode_ = false, highNibble_ = true;
     bool autoSaveSettings_ = true, settingsLoaded_ = false;
+    bool german_ = true;
     bool syntaxAuto_ = true;
     Syntax syntax_ = Syntax::None;
     UINT_PTR syntaxCommand_ = kSyntaxAuto;
@@ -872,51 +905,30 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         else if (LOWORD(wp) == kSaveSettings) editor(hwnd)->saveSettings();
         else if (LOWORD(wp) == kAutoSaveSettings) editor(hwnd)->toggleAutoSaveSettings();
         else if (LOWORD(wp) == kResetSettings) editor(hwnd)->resetSettings();
+        else if (LOWORD(wp) == kEncodingUtf8) editor(hwnd)->setEncoding(TextEncoding::Utf8);
+        else if (LOWORD(wp) == kEncodingAnsi) editor(hwnd)->setEncoding(TextEncoding::Ansi);
+        else if (LOWORD(wp) == kWriteBom) editor(hwnd)->toggleBom();
+        else if (LOWORD(wp) == kLanguageGerman) editor(hwnd)->setLanguage(true);
+        else if (LOWORD(wp) == kLanguageEnglish) editor(hwnd)->setLanguage(false);
         return 0;
     }
     return DefWindowProcW(hwnd, msg, wp, lp);
 }
 
-HMENU makeMenu() {
-    HMENU bar = CreateMenu(), file = CreatePopupMenu(), view = CreatePopupMenu();
-    HMENU font = CreatePopupMenu(), faces = CreatePopupMenu(), sizes = CreatePopupMenu(), help = CreatePopupMenu(), syntax = CreatePopupMenu(), mode = CreatePopupMenu(), settings = CreatePopupMenu();
-    AppendMenuW(file, MF_STRING, kNew, L"&Neu\tStrg+N"); AppendMenuW(file, MF_STRING, kOpen, L"&Oeffnen...\tStrg+O");
-    AppendMenuW(file, MF_STRING, kSave, L"&Speichern\tStrg+S");
-    AppendMenuW(file, MF_STRING, kSaveAs, L"Speichern &unter...\tStrg+Umschalt+S"); AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(file, MF_STRING, kExit, L"&Beenden"); AppendMenuW(bar, MF_POPUP, reinterpret_cast<UINT_PTR>(file), L"&Datei");
-    AppendMenuW(view, MF_STRING | MF_CHECKED, kLineNumbers, L"&Zeilennummern");
-    AppendMenuW(view, MF_STRING, kWordWrap, L"&Virtueller Zeilenumbruch");
-    AppendMenuW(view, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(view, MF_STRING | MF_CHECKED, kLightMode, L"&Heller Modus");
-    AppendMenuW(view, MF_STRING, kDarkMode, L"&Dunkler Modus");
-    AppendMenuW(bar, MF_POPUP, reinterpret_cast<UINT_PTR>(view), L"&Ansicht");
-    AppendMenuW(faces, MF_STRING | MF_CHECKED, kFontConsolas, L"Consolas");
-    AppendMenuW(faces, MF_STRING, kFontCascadia, L"Cascadia Mono");
-    AppendMenuW(faces, MF_STRING, kFontCourier, L"Courier New");
-    AppendMenuW(faces, MF_STRING, kFontLucida, L"Lucida Console");
-    AppendMenuW(sizes, MF_STRING, kSize10, L"10 pt"); AppendMenuW(sizes, MF_STRING, kSize12, L"12 pt");
-    AppendMenuW(sizes, MF_STRING | MF_CHECKED, kSize14, L"14 pt"); AppendMenuW(sizes, MF_STRING, kSize16, L"16 pt");
-    AppendMenuW(sizes, MF_STRING, kSize18, L"18 pt"); AppendMenuW(sizes, MF_STRING, kSize20, L"20 pt");
-    AppendMenuW(sizes, MF_STRING, kSize24, L"24 pt"); AppendMenuW(sizes, MF_STRING, kSize28, L"28 pt");
-    AppendMenuW(font, MF_POPUP, reinterpret_cast<UINT_PTR>(faces), L"&Schriftart");
-    AppendMenuW(font, MF_POPUP, reinterpret_cast<UINT_PTR>(sizes), L"Schrift&groesse");
-    AppendMenuW(bar, MF_POPUP, reinterpret_cast<UINT_PTR>(font), L"&Schrift");
-    AppendMenuW(syntax, MF_STRING | MF_CHECKED, kSyntaxAuto, L"&Automatisch");
-    AppendMenuW(syntax, MF_STRING, kSyntaxNone, L"&Aus"); AppendMenuW(syntax, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(syntax, MF_STRING, kSyntaxCpp, L"C / C++"); AppendMenuW(syntax, MF_STRING, kSyntaxJson, L"JSON");
-    AppendMenuW(syntax, MF_STRING, kSyntaxPython, L"Python"); AppendMenuW(syntax, MF_STRING, kSyntaxXml, L"XML / HTML");
-    AppendMenuW(syntax, MF_STRING, kSyntaxLog, L"Logdatei");
-    AppendMenuW(syntax, MF_STRING, kSyntaxCSharp, L"C#"); AppendMenuW(syntax, MF_STRING, kSyntaxAsm, L"Assembler");
-    AppendMenuW(bar, MF_POPUP, reinterpret_cast<UINT_PTR>(syntax), L"S&yntax");
-    AppendMenuW(mode, MF_STRING | MF_CHECKED, kTextMode, L"&Texteditor");
-    AppendMenuW(mode, MF_STRING, kHexMode, L"&Hex-Editor");
-    AppendMenuW(bar, MF_POPUP, reinterpret_cast<UINT_PTR>(mode), L"&Modus");
-    AppendMenuW(settings, MF_STRING, kSaveSettings, L"Einstellungen jetzt &speichern");
-    AppendMenuW(settings, MF_STRING | MF_CHECKED, kAutoSaveSettings, L"&Automatisch speichern");
-    AppendMenuW(settings, MF_SEPARATOR, 0, nullptr); AppendMenuW(settings, MF_STRING, kResetSettings, L"&Standard wiederherstellen");
-    AppendMenuW(bar, MF_POPUP, reinterpret_cast<UINT_PTR>(settings), L"&Einstellungen");
-    AppendMenuW(help, MF_STRING, kAbout, L"&Ueber BigPad...");
-    AppendMenuW(bar, MF_POPUP, reinterpret_cast<UINT_PTR>(help), L"&Hilfe"); return bar;
+HMENU makeMenu(bool de) {
+    HMENU bar=CreateMenu(),file=CreatePopupMenu(),view=CreatePopupMenu(),font=CreatePopupMenu(),faces=CreatePopupMenu(),sizes=CreatePopupMenu(),syntax=CreatePopupMenu(),mode=CreatePopupMenu(),encoding=CreatePopupMenu(),settings=CreatePopupMenu(),language=CreatePopupMenu(),help=CreatePopupMenu();
+    AppendMenuW(file,MF_STRING,kNew,de?L"&Neu\tStrg+N":L"&New\tCtrl+N"); AppendMenuW(file,MF_STRING,kOpen,de?L"&Oeffnen...\tStrg+O":L"&Open...\tCtrl+O");
+    AppendMenuW(file,MF_STRING,kSave,de?L"&Speichern\tStrg+S":L"&Save\tCtrl+S"); AppendMenuW(file,MF_STRING,kSaveAs,de?L"Speichern &unter...\tStrg+Umschalt+S":L"Save &as...\tCtrl+Shift+S"); AppendMenuW(file,MF_SEPARATOR,0,nullptr); AppendMenuW(file,MF_STRING,kExit,de?L"&Beenden":L"E&xit"); AppendMenuW(bar,MF_POPUP,reinterpret_cast<UINT_PTR>(file),de?L"&Datei":L"&File");
+    AppendMenuW(view,MF_STRING|MF_CHECKED,kLineNumbers,de?L"&Zeilennummern":L"&Line numbers"); AppendMenuW(view,MF_STRING,kWordWrap,de?L"&Virtueller Zeilenumbruch":L"&Word wrap"); AppendMenuW(view,MF_SEPARATOR,0,nullptr); AppendMenuW(view,MF_STRING|MF_CHECKED,kLightMode,de?L"&Heller Modus":L"&Light mode"); AppendMenuW(view,MF_STRING,kDarkMode,de?L"&Dunkler Modus":L"&Dark mode"); AppendMenuW(bar,MF_POPUP,reinterpret_cast<UINT_PTR>(view),de?L"&Ansicht":L"&View");
+    AppendMenuW(faces,MF_STRING|MF_CHECKED,kFontConsolas,L"Consolas"); AppendMenuW(faces,MF_STRING,kFontCascadia,L"Cascadia Mono"); AppendMenuW(faces,MF_STRING,kFontCourier,L"Courier New"); AppendMenuW(faces,MF_STRING,kFontLucida,L"Lucida Console");
+    for(const auto& item: std::array<std::pair<UINT_PTR,const wchar_t*>,8>{{{kSize10,L"10 pt"},{kSize12,L"12 pt"},{kSize14,L"14 pt"},{kSize16,L"16 pt"},{kSize18,L"18 pt"},{kSize20,L"20 pt"},{kSize24,L"24 pt"},{kSize28,L"28 pt"}}}) AppendMenuW(sizes,MF_STRING,item.first,item.second);
+    AppendMenuW(font,MF_POPUP,reinterpret_cast<UINT_PTR>(faces),de?L"&Schriftart":L"&Font family"); AppendMenuW(font,MF_POPUP,reinterpret_cast<UINT_PTR>(sizes),de?L"Schrift&groesse":L"Font &size"); AppendMenuW(bar,MF_POPUP,reinterpret_cast<UINT_PTR>(font),de?L"&Schrift":L"F&ont");
+    AppendMenuW(syntax,MF_STRING|MF_CHECKED,kSyntaxAuto,de?L"&Automatisch":L"&Automatic"); AppendMenuW(syntax,MF_STRING,kSyntaxNone,de?L"&Aus":L"&Off"); AppendMenuW(syntax,MF_SEPARATOR,0,nullptr); AppendMenuW(syntax,MF_STRING,kSyntaxCpp,L"C / C++"); AppendMenuW(syntax,MF_STRING,kSyntaxCSharp,L"C#"); AppendMenuW(syntax,MF_STRING,kSyntaxAsm,de?L"Assembler":L"Assembly"); AppendMenuW(syntax,MF_STRING,kSyntaxJson,L"JSON"); AppendMenuW(syntax,MF_STRING,kSyntaxPython,L"Python"); AppendMenuW(syntax,MF_STRING,kSyntaxXml,L"XML / HTML"); AppendMenuW(syntax,MF_STRING,kSyntaxLog,de?L"Logdatei":L"Log file"); AppendMenuW(bar,MF_POPUP,reinterpret_cast<UINT_PTR>(syntax),L"S&yntax");
+    AppendMenuW(mode,MF_STRING|MF_CHECKED,kTextMode,de?L"&Texteditor":L"&Text editor"); AppendMenuW(mode,MF_STRING,kHexMode,de?L"&Hex-Editor":L"&Hex editor"); AppendMenuW(bar,MF_POPUP,reinterpret_cast<UINT_PTR>(mode),de?L"&Modus":L"&Mode");
+    AppendMenuW(encoding,MF_STRING|MF_CHECKED,kEncodingUtf8,L"UTF-8"); AppendMenuW(encoding,MF_STRING,kEncodingAnsi,de?L"Windows ANSI":L"Windows ANSI"); AppendMenuW(encoding,MF_SEPARATOR,0,nullptr); AppendMenuW(encoding,MF_STRING,kWriteBom,de?L"UTF-8-BOM schreiben":L"Write UTF-8 BOM"); AppendMenuW(bar,MF_POPUP,reinterpret_cast<UINT_PTR>(encoding),L"&Encoding");
+    AppendMenuW(settings,MF_STRING,kSaveSettings,de?L"Einstellungen jetzt &speichern":L"&Save settings now"); AppendMenuW(settings,MF_STRING|MF_CHECKED,kAutoSaveSettings,de?L"&Automatisch speichern":L"Save &automatically"); AppendMenuW(settings,MF_SEPARATOR,0,nullptr); AppendMenuW(settings,MF_STRING,kResetSettings,de?L"&Standard wiederherstellen":L"Restore &defaults"); AppendMenuW(bar,MF_POPUP,reinterpret_cast<UINT_PTR>(settings),de?L"&Einstellungen":L"&Settings");
+    AppendMenuW(language,MF_STRING|MF_CHECKED,kLanguageGerman,L"Deutsch"); AppendMenuW(language,MF_STRING,kLanguageEnglish,L"English"); AppendMenuW(bar,MF_POPUP,reinterpret_cast<UINT_PTR>(language),de?L"&Sprache":L"&Language");
+    AppendMenuW(help,MF_STRING,kAbout,de?L"&Ueber BigPad...":L"&About BigPad..."); AppendMenuW(bar,MF_POPUP,reinterpret_cast<UINT_PTR>(help),de?L"&Hilfe":L"&Help"); return bar;
 }
 } // namespace
 
@@ -927,7 +939,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int show) 
     wc.hCursor = LoadCursorW(nullptr, IDC_IBEAM); wc.hIcon = LoadIconW(nullptr, IDI_APPLICATION); wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassExW(&wc)) return 1;
     HWND hwnd = CreateWindowExW(0, kClassName, L"BigPad", WS_OVERLAPPEDWINDOW | WS_VSCROLL,
-                                CW_USEDEFAULT, CW_USEDEFAULT, 1100, 750, nullptr, makeMenu(), instance, nullptr);
+                                CW_USEDEFAULT, CW_USEDEFAULT, 1100, 750, nullptr, makeMenu(true), instance, nullptr);
     if (!hwnd) return 1; ShowWindow(hwnd, show); UpdateWindow(hwnd);
     if (commandLine && *commandLine) {
         // Drag/drop and command-line opening can be added without changing the document model.

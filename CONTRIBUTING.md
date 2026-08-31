@@ -1,26 +1,24 @@
 # Contributing to BigPad
 
-Danke fuer dein Interesse an BigPad. Fehlerberichte und Pull Requests sind
-willkommen.
+[Deutsch](CONTRIBUTING.de.md) | **English**
 
-## Lokaler Build
+Bug reports and pull requests are welcome.
 
-Voraussetzungen sind Windows, CMake 3.20 oder neuer und ein C++20-Compiler.
+## Local build
+
+BigPad requires Windows, CMake 3.20 or newer, and a C++20 compiler.
 
 ```powershell
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake -S . -B build -A x64
 cmake --build build --config Release
 ```
 
-Vor einem Pull Request muss der Release-Build ohne Fehler durchlaufen. Bitte
-halte Aenderungen klein und bewahre das zentrale Versprechen des Projekts:
-Dateien duerfen fuer Anzeige und Bearbeitung nicht vollstaendig in den
-Arbeitsspeicher geladen werden.
+Before opening a pull request, ensure the Release build succeeds. Keep changes focused and preserve the core guarantee: displaying and editing a file must not require loading the complete file into memory.
 
-## Pull Requests
+## Pull requests
 
-- Beschreibe Problem, Loesung und manuelle Tests.
-- Fuege keine Build-Artefakte oder persoenlichen IDE-Dateien hinzu.
-- Nutze fuer neue Funktionen nach Moeglichkeit nur die sichtbaren Dateifenster.
-- Aendere das Dateiformat beim Speichern nicht unbemerkt.
-
+- Describe the problem, solution, and manual tests.
+- Do not commit build artifacts or personal IDE files.
+- New processing features should operate on visible file windows whenever possible.
+- Do not silently change the file encoding or line endings when saving.
+- Add both German and English UI strings for user-visible features.
