@@ -1,5 +1,7 @@
 # BigPad
 
+<p align="center"><img src="assets/bigpad.png" width="160" alt="BigPad application icon"></p>
+
 [Deutsch](README.de.md) | **English**
 
 [![Windows build](https://github.com/rudolfstepan/BigPad/actions/workflows/build.yml/badge.svg)](https://github.com/rudolfstepan/BigPad/actions/workflows/build.yml)

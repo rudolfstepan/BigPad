@@ -24,8 +24,8 @@ Einfuegungen und Loeschungen teilen oder verbinden Pieces. Beim Speichern werden
 BigPad/
 |-- .github/workflows/   Windows-CI
 |-- docs/                englische und deutsche Architektur
-|-- src/                 C++-Quellcode
-|-- CMakeLists.txt       Build-Konfiguration
+|-- assets/              Quelldateien des App-Icons`n|-- src/                 C++-Quellcode
+|-- resource.h/.rc       Windows-App-Ressourcen`n|-- CMakeLists.txt       Build-Konfiguration
 |-- CONTRIBUTING*.md     zweisprachige Beitragsrichtlinien
 |-- LICENSE              MIT-Lizenz
 `-- README*.md           zweisprachige Projektuebersicht

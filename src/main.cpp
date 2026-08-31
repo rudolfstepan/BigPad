@@ -5,6 +5,7 @@
 #include <dwmapi.h>
 #include <uxtheme.h>
 #include <commctrl.h>
+#include "../resource.h"
 
 #include <algorithm>
 #include <array>
@@ -936,7 +937,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int show) 
     INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_BAR_CLASSES};
     InitCommonControlsEx(&controls);
     WNDCLASSEXW wc{sizeof(wc)}; wc.lpfnWndProc = wndProc; wc.hInstance = instance; wc.lpszClassName = kClassName;
-    wc.hCursor = LoadCursorW(nullptr, IDC_IBEAM); wc.hIcon = LoadIconW(nullptr, IDI_APPLICATION); wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+    wc.hCursor = LoadCursorW(nullptr, IDC_IBEAM);
+    wc.hIcon = reinterpret_cast<HICON>(LoadImageW(instance, MAKEINTRESOURCEW(IDI_BIGPAD), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE));
+    wc.hIconSm = reinterpret_cast<HICON>(LoadImageW(instance, MAKEINTRESOURCEW(IDI_BIGPAD), IMAGE_ICON, 16, 16, 0));
+    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     if (!RegisterClassExW(&wc)) return 1;
     HWND hwnd = CreateWindowExW(0, kClassName, L"BigPad", WS_OVERLAPPEDWINDOW | WS_VSCROLL,
                                 CW_USEDEFAULT, CW_USEDEFAULT, 1100, 750, nullptr, makeMenu(true), instance, nullptr);

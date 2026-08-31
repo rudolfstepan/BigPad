@@ -24,8 +24,8 @@ Insertions and deletions split or merge pieces. Saving streams every piece into 
 BigPad/
 |-- .github/workflows/   Windows CI
 |-- docs/                English and German architecture docs
-|-- src/                 C++ source
-|-- CMakeLists.txt       build configuration
+|-- assets/              application icon sources`n|-- src/                 C++ source
+|-- resource.h/.rc       Windows application resources`n|-- CMakeLists.txt       build configuration
 |-- CONTRIBUTING*.md     bilingual contribution guides
 |-- LICENSE              MIT license
 `-- README*.md           bilingual project overview
