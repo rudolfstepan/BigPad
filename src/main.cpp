@@ -257,6 +257,7 @@ public:
         status_ = CreateWindowExW(0, STATUSCLASSNAMEW, nullptr, WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP,
                                   0, 0, 0, 0, hwnd_, nullptr, GetModuleHandleW(nullptr), nullptr);
         loadSettings();
+        resize();
         HMENU oldMenu = GetMenu(hwnd_); SetMenu(hwnd_, makeMenu(german_)); if (oldMenu) DestroyMenu(oldMenu);
     }
     ~Editor() { DeleteObject(font_); }
@@ -358,7 +359,10 @@ public:
         if (r == IDCANCEL) return false; if (r == IDYES) return save(false); return true;
     }
 
-    void resize() { if (status_) SendMessageW(status_, WM_SIZE, 0, 0); measure(); refresh(); }
+    void resize() {
+        if (status_) { RECT rc{}; GetClientRect(hwnd_, &rc); int height = 24; MoveWindow(status_, 0, static_cast<int>(std::max<LONG>(0, rc.bottom-height)), rc.right, height, TRUE); }
+        measure(); refresh();
+    }
     void toggleLineNumbers() { showLineNumbers_ = !showLineNumbers_; settingChanged(); refreshMenu(); refresh(); }
     void toggleWordWrap() { wordWrap_ = !wordWrap_; settingChanged(); refreshMenu(); refresh(); }
     void setDarkMode(bool dark) {
@@ -946,7 +950,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int show) 
                                 CW_USEDEFAULT, CW_USEDEFAULT, 1100, 750, nullptr, makeMenu(true), instance, nullptr);
     if (!hwnd) return 1; ShowWindow(hwnd, show); UpdateWindow(hwnd);
     if (commandLine && *commandLine) {
-        // Drag/drop and command-line opening can be added without changing the document model.
+        int argc = 0; LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+        if (argv && argc > 1) editor(hwnd)->openPath(argv[1], false);
+        if (argv) LocalFree(argv);
     }
     MSG msg{}; while (GetMessageW(&msg, nullptr, 0, 0) > 0) { TranslateMessage(&msg); DispatchMessageW(&msg); }
     return static_cast<int>(msg.wParam);

@@ -23,6 +23,20 @@ BigPad ist ein nativer Open-Source-Text- und Hex-Editor fuer Windows, der fuer s
 - Proportionale Scrollbar und informative Statusleiste
 - Persistente Benutzereinstellungen
 
+## Screenshots
+
+### Textbearbeitung und Syntax-Highlighting
+
+![BigPad-Texteditor mit C++-Syntax-Highlighting](assets/screenshots/01-text-syntax-light.png)
+
+### Dark Mode und virtueller Zeilenumbruch
+
+![BigPad im Dark Mode mit JSON-Syntax-Highlighting und virtuellem Zeilenumbruch](assets/screenshots/02-dark-word-wrap.png)
+
+### Hex-Editor
+
+![BigPad-Hex-Editor](assets/screenshots/03-hex-editor.png)
+
 ## Build
 
 In einer Visual Studio Developer PowerShell:
