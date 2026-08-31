@@ -7,6 +7,7 @@ target_compile_definitions(BigPad PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN N
 target_link_libraries(BigPad PRIVATE comdlg32 shell32 dwmapi uxtheme comctl32 advapi32)
 
 if(MSVC)
+  set_property(TARGET BigPad PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
   target_compile_options(BigPad PRIVATE /W4 /permissive- /utf-8)
 else()
   target_compile_options(BigPad PRIVATE -Wall -Wextra -Wpedantic)
