@@ -6,6 +6,12 @@
 #include <uxtheme.h>
 #include <commctrl.h>
 #include "../resource.h"
+#ifdef BIGPAD_WORKBENCH
+#include "workbench_chrome.hpp"
+#include "workbench/window_frame.hpp"
+#include "workbench/workbench_dialogs.hpp"
+#include "workbench/workbench_menu.hpp"
+#endif
 
 #include <algorithm>
 #include <array>
@@ -16,6 +22,22 @@
 #include <vector>
 
 namespace {
+
+#ifdef BIGPAD_WORKBENCH
+constexpr bool workbenchBuild = true;
+constexpr const wchar_t* settingsKey = L"Software\\BigPadWorkbench";
+#else
+constexpr bool workbenchBuild = false;
+constexpr const wchar_t* settingsKey = L"Software\\BigPad";
+#endif
+
+int editorMessage(HWND owner, const wchar_t* text, const wchar_t* title, UINT flags) {
+#ifdef BIGPAD_WORKBENCH
+    return workbench::message(owner, text, title, flags);
+#else
+    return MessageBoxW(owner, text, title, flags);
+#endif
+}
 
 constexpr wchar_t kClassName[] = L"BigPadWindow";
 constexpr UINT_PTR kNew = 99, kOpen = 100, kSave = 101, kSaveAs = 102, kExit = 103;
@@ -257,6 +279,10 @@ public:
         status_ = CreateWindowExW(0, STATUSCLASSNAMEW, nullptr, WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP,
                                   0, 0, 0, 0, hwnd_, nullptr, GetModuleHandleW(nullptr), nullptr);
         loadSettings();
+#ifdef BIGPAD_WORKBENCH
+        workbench::setDialogLanguage(german_);
+        installWorkbenchStatus(status_);
+#endif
         resize();
         HMENU oldMenu = GetMenu(hwnd_); SetMenu(hwnd_, makeMenu(german_)); if (oldMenu) DestroyMenu(oldMenu);
     }
@@ -267,7 +293,9 @@ public:
         RECT rc{}; GetClientRect(hwnd_, &rc);
         rc.bottom = textBottom();
         IntersectClipRect(dc, rc.left, rc.top, rc.right, rc.bottom);
-        HBRUSH background = CreateSolidBrush(darkMode_ ? RGB(30, 30, 30) : GetSysColor(COLOR_WINDOW));
+        HBRUSH background = CreateSolidBrush(darkMode_        ? RGB(30, 30, 30)
+                                             : workbenchBuild ? RGB(210, 210, 210)
+                                                              : GetSysColor(COLOR_WINDOW));
         FillRect(dc, &rc, background); DeleteObject(background);
         SelectObject(dc, font_); SetBkMode(dc, TRANSPARENT);
         SetTextColor(dc, darkMode_ ? RGB(225, 225, 225) : GetSysColor(COLOR_WINDOWTEXT));
@@ -277,7 +305,9 @@ public:
         const int gutter = gutterWidth();
         if (showLineNumbers_) {
             RECT gr{0, 0, gutter - 8, rc.bottom};
-            HBRUSH gutterBrush = CreateSolidBrush(darkMode_ ? RGB(38, 38, 38) : GetSysColor(COLOR_BTNFACE));
+            HBRUSH gutterBrush = CreateSolidBrush(darkMode_        ? RGB(38, 38, 38)
+                                                  : workbenchBuild ? RGB(170, 170, 170)
+                                                                   : GetSysColor(COLOR_BTNFACE));
             FillRect(dc, &gr, gutterBrush); DeleteObject(gutterBrush);
             HPEN pen = CreatePen(PS_SOLID, 1, darkMode_ ? RGB(70, 70, 70) : GetSysColor(COLOR_3DSHADOW));
             HPEN old = reinterpret_cast<HPEN>(SelectObject(dc, pen));
@@ -305,12 +335,18 @@ public:
 
     bool openDialog() {
         if (!confirmDiscard()) return false;
+#ifdef BIGPAD_WORKBENCH
+        const auto path = workbench::requestPath(hwnd_, tr(L"Datei öffnen", L"Open file"),
+                                                 workbench::Request::OpenFile);
+        return path && openPath(path->wstring(), false);
+#else
         wchar_t path[32768]{};
         OPENFILENAMEW ofn{sizeof(ofn)}; ofn.hwndOwner = hwnd_; ofn.lpstrFile = path;
         ofn.nMaxFile = ARRAYSIZE(path); ofn.lpstrFilter = german_ ? L"Textdateien\0*.txt;*.log;*.csv;*.json;*.xml;*.md\0Alle Dateien\0*.*\0" : L"Text files\0*.txt;*.log;*.csv;*.json;*.xml;*.md\0All files\0*.*\0";
         ofn.Flags = OFN_FILEMUSTEXIST | OFN_EXPLORER;
         if (!GetOpenFileNameW(&ofn)) return false;
         return openPath(path, false);
+#endif
     }
 
     bool openPath(const std::wstring& path, bool askToDiscard = true) {
@@ -342,11 +378,22 @@ public:
         if (!doc_.isOpen()) return false;
         std::wstring path = doc_.path();
         if (choosePath || path.empty()) {
+#ifdef BIGPAD_WORKBENCH
+            const auto chosen = workbench::requestPath(
+                hwnd_, tr(L"Datei speichern", L"Save file"), workbench::Request::SaveFile,
+                path.empty() ? std::filesystem::path(L"Untitled.txt")
+                             : std::filesystem::path(path));
+            if (!chosen) {
+                return false;
+            }
+            path = chosen->wstring();
+#else
             std::vector<wchar_t> buf(32768); wcsncpy_s(buf.data(), buf.size(), path.c_str(), _TRUNCATE);
             OPENFILENAMEW ofn{sizeof(ofn)}; ofn.hwndOwner = hwnd_; ofn.lpstrFile = buf.data();
             ofn.nMaxFile = static_cast<DWORD>(buf.size()); ofn.lpstrFilter = german_ ? L"Textdateien\0*.txt\0Alle Dateien\0*.*\0" : L"Text files\0*.txt\0All files\0*.*\0";
             ofn.Flags = OFN_OVERWRITEPROMPT | OFN_EXPLORER;
             if (!GetSaveFileNameW(&ofn)) return false; path = buf.data();
+#endif
         }
         std::wstring error;
         if (!doc_.saveAs(path, error)) { showError(error); return false; }
@@ -355,8 +402,12 @@ public:
 
     bool confirmDiscard() {
         if (!doc_.dirty()) return true;
-        int r = MessageBoxW(hwnd_, tr(L"Aenderungen speichern?", L"Save changes?"), L"BigPad", MB_YESNOCANCEL | MB_ICONQUESTION);
-        if (r == IDCANCEL) return false; if (r == IDYES) return save(false); return true;
+        int r = editorMessage(hwnd_, tr(L"Aenderungen speichern?", L"Save changes?"), L"BigPad",
+                              MB_YESNOCANCEL | MB_ICONQUESTION);
+        if (r == IDYES) {
+            return save(false);
+        }
+        return r == IDNO;
     }
 
     void resize() {
@@ -395,10 +446,13 @@ public:
         sizeCommand_ = command; recreateFont(); settingChanged(); refreshMenu(); refresh();
     }
     void showAbout() {
-        MessageBoxW(hwnd_, german_ ?
-            L"BigPad\n\nEin nativer Windows-Text- und Hex-Editor fuer sehr grosse Dateien.\nDateiinhalte werden fensterweise gelesen.\n\nVersion 1.1" :
-            L"BigPad\n\nA native Windows text and hex editor for very large files.\nFile content is read in windows.\n\nVersion 1.1",
-            tr(L"Ueber BigPad", L"About BigPad"), MB_OK | MB_ICONINFORMATION);
+        editorMessage(hwnd_,
+                      german_
+                          ? L"BigPad\n\nEin nativer Windows-Text- und Hex-Editor fuer sehr grosse "
+                            L"Dateien.\nDateiinhalte werden fensterweise gelesen.\n\nVersion 1.1"
+                          : L"BigPad\n\nA native Windows text and hex editor for very large "
+                            L"files.\nFile content is read in windows.\n\nVersion 1.1",
+                      tr(L"Ueber BigPad", L"About BigPad"), MB_OK | MB_ICONINFORMATION);
     }
     void selectSyntax(UINT_PTR command) {
         syntaxAuto_ = command == kSyntaxAuto;
@@ -414,7 +468,21 @@ public:
     }
     void setEncoding(TextEncoding encoding) { doc_.setEncoding(encoding); refreshMenu(); refresh(); }
     void toggleBom() { doc_.setWriteBom(!doc_.writeBom()); refreshMenu(); refresh(); }
-    void setLanguage(bool german) { german_ = german; HMENU old = GetMenu(hwnd_); SetMenu(hwnd_, makeMenu(german_)); if(old) DestroyMenu(old); settingChanged(); refreshMenu(); DrawMenuBar(hwnd_); refresh(); }
+    void setLanguage(bool german) {
+        german_ = german;
+#ifdef BIGPAD_WORKBENCH
+        workbench::setDialogLanguage(german_);
+#endif
+        HMENU old = GetMenu(hwnd_);
+        SetMenu(hwnd_, makeMenu(german_));
+        if (old) {
+            DestroyMenu(old);
+        }
+        settingChanged();
+        refreshMenu();
+        DrawMenuBar(hwnd_);
+        refresh();
+    }
     void setHexMode(bool enabled) {
         hexMode_ = enabled; highNibble_ = true;
         top_ = enabled ? (cursor_ / 16) * 16 : lineStart(cursor_);
@@ -423,8 +491,14 @@ public:
     void toggleAutoSaveSettings() { autoSaveSettings_ = !autoSaveSettings_; saveSettings(false); refreshMenu(); }
     void saveSettings(bool notify = true) {
         HKEY key{};
-        if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\BigPad", 0, nullptr, 0, KEY_WRITE, nullptr, &key, nullptr) != ERROR_SUCCESS) {
-            if (notify) MessageBoxW(hwnd_, tr(L"Die Einstellungen konnten nicht gespeichert werden.", L"Settings could not be saved."), L"BigPad", MB_OK | MB_ICONERROR);
+        if (RegCreateKeyExW(HKEY_CURRENT_USER, settingsKey, 0, nullptr, 0, KEY_WRITE, nullptr, &key,
+                            nullptr) != ERROR_SUCCESS) {
+            if (notify) {
+                editorMessage(hwnd_,
+                              tr(L"Die Einstellungen konnten nicht gespeichert werden.",
+                                 L"Settings could not be saved."),
+                              L"BigPad", MB_OK | MB_ICONERROR);
+            }
             return;
         }
         auto write = [key](const wchar_t* name, DWORD value) { RegSetValueExW(key, name, 0, REG_DWORD, reinterpret_cast<const BYTE*>(&value), sizeof(value)); };
@@ -434,7 +508,10 @@ public:
         write(L"AutoSaveSettings", autoSaveSettings_); write(L"German", german_);
         RegSetValueExW(key, L"FontName", 0, REG_SZ, reinterpret_cast<const BYTE*>(fontName_.c_str()), static_cast<DWORD>((fontName_.size()+1)*sizeof(wchar_t)));
         RegCloseKey(key);
-        if (notify) MessageBoxW(hwnd_, tr(L"Einstellungen wurden gespeichert.", L"Settings were saved."), L"BigPad", MB_OK | MB_ICONINFORMATION);
+        if (notify) {
+            editorMessage(hwnd_, tr(L"Einstellungen wurden gespeichert.", L"Settings were saved."),
+                          L"BigPad", MB_OK | MB_ICONINFORMATION);
+        }
     }
     void resetSettings() {
         darkMode_=false; showLineNumbers_=true; wordWrap_=false; fontName_=L"Consolas"; fontPoints_=14;
@@ -545,7 +622,11 @@ private:
     }
     void settingChanged() { if (settingsLoaded_ && autoSaveSettings_) saveSettings(false); }
     void loadSettings() {
-        HKEY key{}; if (RegOpenKeyExW(HKEY_CURRENT_USER,L"Software\\BigPad",0,KEY_READ,&key)!=ERROR_SUCCESS) { settingsLoaded_=true; return; }
+        HKEY key{};
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, settingsKey, 0, KEY_READ, &key) != ERROR_SUCCESS) {
+            settingsLoaded_ = true;
+            return;
+        }
         auto read = [key](const wchar_t* name, DWORD fallback) { DWORD value=fallback,size=sizeof(value),type=0; return RegQueryValueExW(key,name,nullptr,&type,reinterpret_cast<BYTE*>(&value),&size)==ERROR_SUCCESS&&type==REG_DWORD?value:fallback; };
         darkMode_=read(L"DarkMode",0)!=0; showLineNumbers_=read(L"LineNumbers",1)!=0; wordWrap_=read(L"WordWrap",0)!=0;
         fontPoints_=static_cast<int>(std::clamp<DWORD>(read(L"FontPoints",14),8,72)); fontCommand_=read(L"FontCommand",kFontConsolas);
@@ -642,9 +723,11 @@ private:
         HDC dc = GetDC(hwnd_);
         int dpi = GetDeviceCaps(dc, LOGPIXELSY);
         ReleaseDC(hwnd_, dc);
-        HFONT replacement = CreateFontW(-MulDiv(fontPoints_, dpi, 72), 0, 0, 0, FW_NORMAL,
-            FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY, FIXED_PITCH | FF_MODERN, fontName_.c_str());
+        HFONT replacement =
+            CreateFontW(-MulDiv(fontPoints_, dpi, 72), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                        workbenchBuild ? NONANTIALIASED_QUALITY : CLEARTYPE_QUALITY,
+                        FIXED_PITCH | FF_MODERN, fontName_.c_str());
         if (replacement) {
             if (font_) DeleteObject(font_);
             font_ = replacement;
@@ -849,7 +932,10 @@ private:
     void refresh() {
         updateTitle(); InvalidateRect(hwnd_, nullptr, FALSE);
     }
-    void showError(const std::wstring& e) { MessageBoxW(hwnd_, e.c_str(), tr(L"BigPad - Fehler", L"BigPad - Error"), MB_OK | MB_ICONERROR); }
+    void showError(const std::wstring& e) {
+        editorMessage(hwnd_, e.c_str(), tr(L"BigPad - Fehler", L"BigPad - Error"),
+                      MB_OK | MB_ICONERROR);
+    }
 
     HWND hwnd_; HWND status_{}; Document doc_; HFONT font_{}; int lineHeight_ = 20, charWidth_ = 10;
     uint64_t top_ = 0, cursor_ = 0; int preferredCol_ = 0; std::vector<Line> lines_;
@@ -938,6 +1024,9 @@ HMENU makeMenu(bool de) {
 } // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int show) {
+#ifdef BIGPAD_WORKBENCH
+    SetProcessDPIAware();
+#endif
     INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_BAR_CLASSES};
     InitCommonControlsEx(&controls);
     WNDCLASSEXW wc{sizeof(wc)}; wc.lpfnWndProc = wndProc; wc.hInstance = instance; wc.lpszClassName = kClassName;
@@ -948,7 +1037,21 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int show) 
     if (!RegisterClassExW(&wc)) return 1;
     HWND hwnd = CreateWindowExW(0, kClassName, L"BigPad", WS_OVERLAPPEDWINDOW | WS_VSCROLL,
                                 CW_USEDEFAULT, CW_USEDEFAULT, 1100, 750, nullptr, makeMenu(true), instance, nullptr);
-    if (!hwnd) return 1; ShowWindow(hwnd, show); UpdateWindow(hwnd);
+    if (!hwnd) {
+        return 1;
+    }
+#ifdef BIGPAD_WORKBENCH
+    const retro_frame::Colors frame{RGB(0, 65, 175), RGB(255, 255, 255), RGB(170, 170, 170),
+                                    RGB(100, 100, 100)};
+    if (!retro_frame::install(hwnd, frame) || !workbench::installMenu(hwnd) ||
+        !installWorkbenchDocumentScrollbar(
+            hwnd, [hwnd](int code, int position) { editor(hwnd)->vscroll(code, position); })) {
+        DestroyWindow(hwnd);
+        return 1;
+    }
+#endif
+    ShowWindow(hwnd, show);
+    UpdateWindow(hwnd);
     if (commandLine && *commandLine) {
         int argc = 0; LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
         if (argv && argc > 1) editor(hwnd)->openPath(argv[1], false);

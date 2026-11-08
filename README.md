@@ -39,6 +39,19 @@ BigPad is an open-source native Windows text and hex editor designed for very la
 
 ## Build
 
+### Workbench edition
+
+Build `BigPadWorkbench` to produce `build/BigPadWorkbench.exe` for the Workbench
+desktop. It uses custom window frames, menus, scrollbars, file requesters and
+confirmation dialogs. The original `BigPad.exe` remains available. Preferences
+are stored separately under `HKCU/Software/BigPadWorkbench`.
+
+The custom menu handles hovering itself and uses DPI-aware hit coordinates.
+Build `BigPadDocumentTests` and `BigPadMenuTests`, then run
+`ctest --test-dir build --output-on-failure` to check document round trips and
+menu geometry. Existing warnings in unchanged editor functions remain; the
+new Workbench modules introduce no additional compiler warnings.
+
 From a Visual Studio Developer PowerShell:
 
 ```powershell
