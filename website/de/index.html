@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0078d7">
+    <meta name="description" content="BigPad ist ein schneller nativer Text- und Hex-Editor für Dateien, die für gewöhnliche Editoren zu groß sind.">
+    <meta property="og:type" content="website">
+    <meta property="og:locale" content="de_AT">
+    <meta property="og:title" content="BigPad — Große Dateien, geringer Speicherbedarf">
+    <meta property="og:description" content="Ein nativer Open-Source-Text- und Hex-Editor für sehr große Dateien unter Windows.">
+    <title>BigPad — Große Dateien, geringer Speicherbedarf</title>
+    <link rel="icon" type="image/png" href="../assets/bigpad.png">
+    <link rel="stylesheet" href="../styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#content">Zum Inhalt springen</a>
+    <header class="site-header">
+      <nav class="nav container" aria-label="Hauptnavigation">
+        <a class="brand" href="index.html" aria-current="page"><img src="../assets/bigpad.png" alt="" width="42" height="42"><span>BigPad</span></a>
+        <ul class="nav-links">
+          <li><a href="#features">Funktionen</a></li><li><a href="#screenshots">Screenshots</a></li><li><a href="#how-it-works">So funktioniert es</a></li><li><a href="../index.html?lang=en" lang="en" hreflang="en">English</a></li>
+        </ul>
+      </nav>
+    </header>
+    <main id="content">
+      <section class="hero"><div class="container hero-grid">
+        <div><p class="eyebrow">Nativer Editor für Windows</p><h1>Große Dateien.<br>Kleiner Fußabdruck.</h1><p class="hero-lead">BigPad öffnet und bearbeitet mehrere Gigabyte große Text- und Binärdateien, ohne alles in den Arbeitsspeicher zu laden. Schnell, fokussiert und vollständig Open Source.</p>
+          <div class="actions"><a class="button button-primary" href="https://github.com/rudolfstepan/BigPad/releases/latest">Neueste Version laden</a><a class="button button-secondary" href="https://github.com/rudolfstepan/BigPad">Auf GitHub ansehen</a></div>
+          <p class="store-note"><span aria-hidden="true">⊞</span> In Kürze auch im Microsoft Store erhältlich</p>
+          <ul class="trust-row" aria-label="Produkteigenschaften"><li>Open Source</li><li>Native Windows-App</li><li>Keine Telemetrie</li></ul>
+        </div>
+        <figure class="app-window hero-window"><div class="window-bar"><img class="window-icon" src="../assets/bigpad.png" alt=""><span>BigPad — windowed_file.cpp</span><span class="window-controls" aria-hidden="true"><span></span><span></span><span></span></span></div><img src="../assets/01-text-syntax-light.png" alt="BigPad beim Bearbeiten von C++-Code mit Syntaxhervorhebung"></figure>
+      </div></section>
+
+      <section class="section" id="features"><div class="container">
+        <div class="section-heading"><p class="eyebrow">Kleiner Editor, ernsthafte Dateien</p><h2>Für Dateien, an denen gewöhnliche Editoren scheitern.</h2><p>Eine Piece-Table referenziert unveränderte Dateibereiche. Im Speicher liegen nur kleine Lesefenster und neu eingefügte Bytes.</p></div>
+        <div class="feature-grid">
+          <article class="feature-card"><span class="feature-number">01</span><h3>Mehrere Gigabyte</h3><p>Öffne riesige Dateien über fensterweisen Zugriff, statt die komplette Datei in den RAM zu laden.</p></article>
+          <article class="feature-card"><span class="feature-number">02</span><h3>Text und Hex</h3><p>Wechsle in derselben Anwendung zwischen Texteditor und editierbarer Hexadezimalansicht.</p></article>
+          <article class="feature-card"><span class="feature-number">03</span><h3>Sicheres Speichern</h3><p>Streamendes, atomares Speichern hält den Speicherbedarf vorhersehbar und schützt das Original.</p></article>
+          <article class="feature-card"><span class="feature-number">04</span><h3>Syntaxhervorhebung</h3><p>Lesbare Farben für C/C++, C#, Assembler, JSON, Python, XML/HTML und Logdateien.</p></article>
+          <article class="feature-card"><span class="feature-number">05</span><h3>Deine bevorzugte Ansicht</h3><p>Wähle Hell- oder Dunkelmodus, Zeilenumbruch, Zeilennummern, Schrift und Schriftgröße.</p></article>
+          <article class="feature-card"><span class="feature-number">06</span><h3>Volle Encoding-Kontrolle</h3><p>Arbeite mit UTF-8, optionalem UTF-8-BOM und Windows-ANSI auf Deutsch oder Englisch.</p></article>
+        </div>
+      </div></section>
+
+      <section class="section section-wash" id="screenshots"><div class="container">
+        <div class="section-heading"><p class="eyebrow">Ein Werkzeug, zwei Perspektiven</p><h2>Lesbarer Text. Präzise Bytes.</h2><p>Arbeite angenehm in langen Textsitzungen und prüfe bei Bedarf die exakten zugrunde liegenden Daten.</p></div>
+        <div class="showcase-grid">
+          <figure class="showcase-card"><img src="../assets/02-dark-word-wrap.png" alt="BigPad im Dunkelmodus mit JSON-Syntaxhervorhebung und Zeilenumbruch"><figcaption><strong>Komfort für lange Sitzungen</strong><span>Dunkelmodus, Zeilenumbruch, Zeilennummern und konfigurierbare Schriften.</span></figcaption></figure>
+          <figure class="showcase-card"><img src="../assets/03-hex-editor.png" alt="Editierbare Hexadezimalansicht in BigPad"><figcaption><strong>Kontrolle auf Byte-Ebene</strong><span>Eine editierbare Hex-Ansicht mit klaren Offsets und Statusinformationen.</span></figcaption></figure>
+        </div>
+      </div></section>
+
+      <section class="section section-blue" id="how-it-works"><div class="container">
+        <div class="section-heading"><p class="eyebrow">Ohne Umwege startklar</p><h2>In drei Schritten vom Download zur Bearbeitung.</h2></div>
+        <div class="steps"><article class="step"><h3>BigPad laden</h3><p>Hole die aktuelle Windows-Version von GitHub und starte die native Anwendung.</p></article><article class="step"><h3>Datei öffnen</h3><p>Nutze den Dateidialog oder ziehe eine Datei direkt aus dem Windows Explorer hinein.</p></article><article class="step"><h3>Passend bearbeiten</h3><p>Wähle Text- oder Hex-Modus, Encoding, Farbschema, Umbruch und Syntaxhervorhebung.</p></article></div>
+      </div></section>
+
+      <section class="section"><div class="container privacy-split">
+        <div><p class="eyebrow">Von Grund auf lokal</p><h2>Deine Dateien bleiben auf deinem PC.</h2><p>BigPad ist eine klassische native Desktop-Anwendung. Sie benötigt kein Konto, sendet keine Telemetrie und speichert Einstellungen lokal.</p></div>
+        <ul class="privacy-list"><li><strong>Kein Upload:</strong> Dateien werden ausschließlich lokal geöffnet und bearbeitet.</li><li><strong>Keine Analyse:</strong> kein Tracking und keine Nutzungsberichte.</li><li><strong>Transparent:</strong> der vollständige Quellcode ist öffentlich.</li><li><strong>Freizügig:</strong> veröffentlicht unter der MIT-Lizenz.</li></ul>
+      </div></section>
+
+      <section class="section section-tight"><div class="container cta"><p class="eyebrow">BigPad</p><h2>Öffne die Datei, nicht ein Speicherproblem.</h2><p>Lade BigPad für Windows herunter oder entdecke die Implementierung auf GitHub.</p><div class="actions"><a class="button button-light" href="https://github.com/rudolfstepan/BigPad/releases/latest">Neueste Version laden</a><a class="button button-outline" href="https://github.com/rudolfstepan/BigPad">Quellcode ansehen</a></div></div></section>
+    </main>
+    <footer class="site-footer"><div class="container"><div class="footer-grid">
+      <div><a class="brand footer-brand" href="index.html"><img src="../assets/bigpad.png" alt="" width="42" height="42"><span>BigPad</span></a><p class="footer-copy">Ein schneller Open-Source-Text- und Hex-Editor für sehr große Dateien unter Windows.</p></div>
+      <div><p class="footer-title">Produkt</p><ul class="footer-links"><li><a href="#features">Funktionen</a></li><li><a href="#screenshots">Screenshots</a></li><li><a href="https://github.com/rudolfstepan/BigPad/releases">Versionen</a></li></ul></div>
+      <div><p class="footer-title">Projekt</p><ul class="footer-links"><li><a href="datenschutz.html">Datenschutz</a></li><li><a href="https://github.com/rudolfstepan/BigPad">Quellcode</a></li><li><a href="https://github.com/rudolfstepan/BigPad/blob/main/CONTRIBUTING.de.md">Mitwirken</a></li><li><a href="https://github.com/rudolfstepan/BigPad/blob/main/LICENSE">MIT-Lizenz</a></li></ul></div>
+    </div><div class="footer-bottom">© 2026 Rudolf Stepan. BigPad ist Open-Source-Software.</div></div></footer>
+  </body>
+</html>
